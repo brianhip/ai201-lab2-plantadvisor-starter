@@ -11,6 +11,16 @@ with open(os.path.join(DATA_PATH, "plants.json"), encoding="utf-8") as f:
 with open(os.path.join(DATA_PATH, "seasons.json"), encoding="utf-8") as f:
     _season_data = json.load(f)
 
+# Inverted index built once at load: maps every searchable name (slug,
+# display_name, and each alias — all lowercased) to the plant's slug.
+# Lets lookup_plant resolve any name with a single O(1) dict lookup.
+_name_index = {}
+for _slug, _plant in _plant_db.items():
+    _name_index[_slug.lower()] = _slug
+    _name_index[_plant["display_name"].lower()] = _slug
+    for _alias in _plant["aliases"]:
+        _name_index[_alias.lower()] = _slug
+
 # Maps calendar months to seasons for auto-detection.
 _MONTH_TO_SEASON = {
     12: "winter", 1: "winter", 2: "winter",
@@ -52,10 +62,17 @@ def lookup_plant(plant_name: str) -> dict:
 
     Before writing code, complete the lookup_plant section of specs/tool-functions-spec.md.
     """
+    
+    normalized = plant_name.strip().lower()
+
+    if normalized in _name_index:
+        slug = _name_index[normalized]
+        return {"found": True, "plant": _plant_db[slug]}
+
     return {
         "found": False,
-        "name": plant_name,
-        "message": "Plant lookup not yet implemented. Complete Milestone 1.",
+        "name": normalized,
+        "message": f"'{plant_name}' was not found as a valid plant in our records.",
     }
 
 

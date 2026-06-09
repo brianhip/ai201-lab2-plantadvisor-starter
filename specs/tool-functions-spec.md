@@ -70,7 +70,34 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 *Aliases are stored as a list of strings. How will you check if the normalized input matches any alias in the list? Write your approach in pseudocode or plain English.*
 
 ```
-[your answer here]
+Instead of scanning each plant's alias list on every lookup, I preprocess
+_plant_db once into an inverted index: a flat dict that maps every searchable
+name -> the plant's slug.
+
+Build it once at module load (the same place _plant_db is loaded), by looping
+over every plant and inserting three kinds of entries, all pointing to that
+plant's slug:
+    - the slug itself              ("pothos"        -> "pothos")
+    - the lowercased display_name  ("pothos"        -> "pothos")
+    - each lowercased alias        ("devil's ivy"   -> "pothos")
+
+  _name_index = {}
+  for slug, plant in _plant_db.items():
+      _name_index[slug] = slug
+      _name_index[plant["display_name"].lower()] = slug
+      for alias in plant["aliases"]:
+          _name_index[alias.lower()] = slug
+
+Then key / display / alias matching all collapse into a single membership test:
+
+  if normalized in _name_index:
+      slug = _name_index[normalized]
+      return {"found": True, "plant": _plant_db[slug]}
+
+Note: with this design the "key -> display -> alias" search order becomes a
+BUILD/precedence order, not a runtime scan order. It only matters if two plants
+ever share a name — whichever entry is inserted last wins — so insert in a
+deliberate order.
 ```
 
 ---
@@ -79,9 +106,13 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 
 *When a plant isn't found, the agent will read your message and use it to decide what to tell the user. Write the exact string you'll return — make it useful to the agent, not just to a human reading logs.*
 
+```python
+message = f"'{plant_name}' was not found as a valid plant in our records."
 ```
-[your answer here]
-```
+
+The string names the exact input that failed (interpolated with an f-string),
+so the agent can tell the user which name didn't match — more useful than a
+fixed string. The `"name"` field also carries the normalized input separately.
 
 ---
 
@@ -91,17 +122,24 @@ likely match for clean user input. Aliases are the broadest net, so they go last
 
 **Test: does `"devil's ivy"` return the pothos entry?**
 ```
-[yes / no — if no, describe what happened]
+yes — matches via the alias entry in the index, returns the Pothos plant dict.
 ```
 
 **Test: does `"SNAKE PLANT"` return the snake plant entry?**
 ```
-[yes / no — if no, describe what happened]
+yes — lowercased to "snake plant", matches the display_name entry, returns Snake Plant.
 ```
 
 **One edge case you discovered while implementing:**
 ```
-[your answer here]
+The slug keys contain underscores (e.g. "snake_plant"), but a user types
+"snake plant" with a space. With plain .strip().lower() normalization, the
+underscore slug entry ("snake_plant") never matches spaced user input — that
+input is instead caught by the display_name entry ("Snake Plant" -> "snake
+plant"). So the slug entries in the index are effectively redundant for normal
+typing; they only matter if the LLM passes the literal slug. Harmless, but a
+reminder that the three index entries don't all pull equal weight under this
+normalization.
 ```
 
 ---
